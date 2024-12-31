@@ -169,3 +169,33 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+# folders
+__pycache__/
+.idea/
+.vscode/
+data/
+
+
+# files
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.cache
+*.egg-info
+*.egg
+*.db
+*.sqlite3
+*.swp
+*.swo
+*.out
+*.pid
+*.pidlock
+*.lock
+*.tmp
+*.bak
+*.diff
+*.ini
+*.csv
