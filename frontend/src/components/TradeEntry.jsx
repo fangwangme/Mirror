@@ -324,18 +324,45 @@ const TradeEntry = () => {
 
   const handleTradeSubmit = async (values) => {
     try {
+      // Combine date and time into a single datetime string
+      const actionDateTime = `${values.actionDate.format('YYYY-MM-DD')} ${values.actionTime.format('HH:mm:ss')}`;
+  
       const tradeData = {
-        ...values,
-        // Ensure stop_loss and exit_target are 0 if not provided
-        stop_loss: values.stopLoss || 0,
-        exit_target: values.exitTarget || 0,
-        symbol: symbol,
-        date: values.actionDate.format('YYYY-MM-DD')
+        symbol: values.symbol,
+        name: values.name.replace(/\s+/g, ''),
+        action: values.action,
+        actionDateTime: actionDateTime,
+        actionPrice: values.actionPrice,
+        stopLoss: values.stopLoss || 0,
+        exitTarget: values.exitTarget || 0,
+        size: values.size,
+        fee: values.fee || 0,
+        reason: values.reason,
+        mentalState: values.mentalState,
+        description: values.description || ''
       };
-      // ...existing code...
+  
+      const url = editingTrade 
+        ? `${ENDPOINTS.TRADES}?id=${editingTrade.id}`  // Changed from /${editingTrade.id} to ?id=
+        : ENDPOINTS.TRADES;
+      
+      const response = await fetch(url, {
+        method: editingTrade ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tradeData)
+      });
+  
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+  
+      message.success(`Trade ${editingTrade ? 'updated' : 'saved'} successfully`);
+      form.resetFields();
+      setEditingTrade(null);
+      await fetchTrades();  // Refresh the trade list
     } catch (error) {
       console.error('Error submitting trade:', error);
-      message.error('Failed to submit trade');
+      message.error(error.message || 'Failed to submit trade');
     }
   };
 
