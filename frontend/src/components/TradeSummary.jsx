@@ -640,16 +640,24 @@ const TradeSummary = () => {
         />
 
         <Card title="Trade Statistics">
-          {/* Total P/L display */}
-          <div style={{ marginBottom: '20px' }}>
-            <strong>Total P/L: </strong>
-            <span style={{ 
-              color: totalProfit >= 0 ? '#26a69a' : '#ef5350',
-              fontSize: '1.2em',
-              fontWeight: 'bold'
-            }}>
-              ${totalProfit.toFixed(2)}
-            </span>
+          {/* Total P/L and Fees display */}
+          <div style={{ marginBottom: '20px', display: 'flex', gap: '20px' }}>
+            <div>
+              <strong>Total P/L: </strong>
+              <span style={{ 
+                color: totalProfit >= 0 ? '#26a69a' : '#ef5350',
+                fontSize: '1.2em',
+                fontWeight: 'bold'
+              }}>
+                ${totalProfit.toFixed(2)}
+              </span>
+            </div>
+            <div>
+              <strong>Total Fees: </strong>
+              <span style={{ fontSize: '1.2em', fontWeight: 'bold' }}>
+                ${profitSummary.reduce((sum, item) => sum + item.totalFees, 0).toFixed(2)}
+              </span>
+            </div>
           </div>
 
           {/* Statistics by Name */}

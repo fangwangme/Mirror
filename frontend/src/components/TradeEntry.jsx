@@ -14,6 +14,9 @@ const TradeEntry = () => {
   const [filterSymbol, setFilterSymbol] = useState("");
   const [filterDate, setFilterDate] = useState(null);
 
+  // Change default symbol to SPY
+  const [symbol, setSymbol] = useState('SPY');
+
   useEffect(() => {
     fetchTrades();
   }, []);
@@ -44,8 +47,8 @@ const TradeEntry = () => {
       action: values.action,
       actionDateTime,
       actionPrice: values.actionPrice,
-      stopLoss: values.stopLoss || null,  // Changed to handle null values
-      exitTarget: values.exitTarget || null,  // Changed to handle null values
+      stopLoss: values.stopLoss || 0,  // Ensure stop_loss is 0 if not provided
+      exitTarget: values.exitTarget || 0,  // Ensure exit_target is 0 if not provided
       size: values.size,
       fee: values.fee || 0,
       reason: values.reason,
@@ -145,8 +148,8 @@ const TradeEntry = () => {
               second: datetime.second()
             }),
             actionPrice: record.action_price,
-            stopLoss: record.stop_loss,    // Add these lines
-            exitTarget: record.exit_target, // Add these lines
+            stopLoss: record.stop_loss || 0,    // Ensure stop_loss is 0 if not provided
+            exitTarget: record.exit_target || 0, // Ensure exit_target is 0 if not provided
             mentalState: record.mental_state
           });
         }}>
@@ -309,18 +312,43 @@ const TradeEntry = () => {
   );
 
   const handleEdit = (record) => {
-    const datetime = moment(record.action_datetime);
-    setEditingTrade(record);
-    form.setFieldsValue({
+    // Set default values of 0 for stop_loss and exit_target if they're null/undefined
+    const editData = {
       ...record,
-      actionDate: datetime,
-      actionTime: moment(datetime, 'HH:mm:ss'),  // Ensure proper time format
-      actionPrice: record.action_price,
-      stopLoss: record.stop_loss,    // Add these lines
-      exitTarget: record.exit_target, // Add these lines
-      mentalState: record.mental_state
-    });
+      stop_loss: record.stop_loss || 0,
+      exit_target: record.exit_target || 0
+    };
+    setEditingTrade(editData);
+    form.setFieldsValue(editData);
   };
+
+  const handleTradeSubmit = async (values) => {
+    try {
+      const tradeData = {
+        ...values,
+        // Ensure stop_loss and exit_target are 0 if not provided
+        stop_loss: values.stopLoss || 0,
+        exit_target: values.exitTarget || 0,
+        symbol: symbol,
+        date: values.actionDate.format('YYYY-MM-DD')
+      };
+      // ...existing code...
+    } catch (error) {
+      console.error('Error submitting trade:', error);
+      message.error('Failed to submit trade');
+    }
+  };
+
+  // Update initial form values to include defaults
+  const initialFormValues = {
+    symbol: 'SPY',
+    stopLoss: 0,
+    exitTarget: 0
+  };
+
+  useEffect(() => {
+    form.setFieldsValue(initialFormValues);
+  }, [form]);
 
   return (
     <div className="trade-entry">
@@ -328,12 +356,8 @@ const TradeEntry = () => {
       <Form
         form={form}
         layout="vertical"
-        onFinish={onFinish}
-        initialValues={{
-          size: 1,
-          fee: 0,
-          action: 'BUY'  // Changed from 'BTO' to 'BUY'
-        }}
+        onFinish={handleTradeSubmit}
+        initialValues={{ ...initialFormValues, symbol: 'SPY' }} // Explicitly set SPY as default
       >
         {formItems}
       </Form>
@@ -345,6 +369,7 @@ const TradeEntry = () => {
           value={filterSymbol}
           onChange={setFilterSymbol}
           style={{ width: 120 }}
+          defaultValue="SPY" // Set default for filter as well
         >
           <Option value="">All</Option>
           <Option value="SPY">SPY</Option>
