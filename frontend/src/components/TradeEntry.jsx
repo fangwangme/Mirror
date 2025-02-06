@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, DatePicker, Select, InputNumber, Space, Table, message } from 'antd';
+import { Form, Input, Button, DatePicker, Select, InputNumber, Space, Table, message, TimePicker } from 'antd';
 import moment from 'moment';  // Just use regular moment
 import { ENDPOINTS } from '../config/api';
 
@@ -36,8 +36,7 @@ const TradeEntry = () => {
   };
 
   const onFinish = async (values) => {
-    // Simple date time combination
-    const actionDateTime = `${values.actionDate.format('YYYY-MM-DD')} ${values.actionTime.format('HH:mm:00')}`;
+    const actionDateTime = `${values.actionDate.format('YYYY-MM-DD')} ${values.actionTime.format('HH:mm:ss')}`;
 
     const tradeData = {
       symbol: values.symbol,
@@ -45,6 +44,8 @@ const TradeEntry = () => {
       action: values.action,
       actionDateTime,
       actionPrice: values.actionPrice,
+      stopLoss: values.stopLoss || null,  // Changed to handle null values
+      exitTarget: values.exitTarget || null,  // Changed to handle null values
       size: values.size,
       fee: values.fee || 0,
       reason: values.reason,
@@ -108,11 +109,13 @@ const TradeEntry = () => {
       title: 'Stop Loss', 
       dataIndex: 'stop_loss',
       sorter: (a, b) => (a.stop_loss || 0) - (b.stop_loss || 0),
+      render: (value) => value ? value.toFixed(2) : '-'
     },
     { 
       title: 'Exit Target', 
       dataIndex: 'exit_target',
       sorter: (a, b) => (a.exit_target || 0) - (b.exit_target || 0),
+      render: (value) => value ? value.toFixed(2) : '-'
     },
     { 
       title: 'Size', 
@@ -136,8 +139,14 @@ const TradeEntry = () => {
           form.setFieldsValue({
             ...record,
             actionDate: datetime,
-            actionTime: datetime,
+            actionTime: datetime.set({  // Preserve seconds when editing
+              hour: datetime.hour(),
+              minute: datetime.minute(),
+              second: datetime.second()
+            }),
             actionPrice: record.action_price,
+            stopLoss: record.stop_loss,    // Add these lines
+            exitTarget: record.exit_target, // Add these lines
             mentalState: record.mental_state
           });
         }}>
@@ -180,10 +189,6 @@ const TradeEntry = () => {
           <Select style={{ width: 120 }}>
             <Option value="BUY">Buy</Option>
             <Option value="SELL">Sell</Option>
-            <Option value="BTO">Buy to Open</Option>
-            <Option value="STC">Sell to Close</Option>
-            <Option value="STO">Sell to Open</Option>
-            <Option value="BTC">Buy to Close</Option>
           </Select>
         </Form.Item>
 
@@ -203,12 +208,14 @@ const TradeEntry = () => {
           label="Action Time"
           rules={[{ required: true }]}
         >
-          {/* Modified TimePicker to support seconds */}
-          <DatePicker.TimePicker 
+          <TimePicker 
             format="HH:mm:ss"
-            minuteStep={1}
             showSecond={true}
+            hideDisabledOptions={true}
+            minuteStep={1}
+            secondStep={1}
             use12Hours={false}
+            style={{ width: 120 }}
           />
         </Form.Item>
 
@@ -301,6 +308,20 @@ const TradeEntry = () => {
     </>
   );
 
+  const handleEdit = (record) => {
+    const datetime = moment(record.action_datetime);
+    setEditingTrade(record);
+    form.setFieldsValue({
+      ...record,
+      actionDate: datetime,
+      actionTime: moment(datetime, 'HH:mm:ss'),  // Ensure proper time format
+      actionPrice: record.action_price,
+      stopLoss: record.stop_loss,    // Add these lines
+      exitTarget: record.exit_target, // Add these lines
+      mentalState: record.mental_state
+    });
+  };
+
   return (
     <div className="trade-entry">
       <h2>{editingTrade ? 'Edit Trade' : 'Enter Trade Details'}</h2>
@@ -311,7 +332,7 @@ const TradeEntry = () => {
         initialValues={{
           size: 1,
           fee: 0,
-          action: 'BTO'  // Set default action
+          action: 'BUY'  // Changed from 'BTO' to 'BUY'
         }}
       >
         {formItems}

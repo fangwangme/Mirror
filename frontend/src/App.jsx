@@ -12,10 +12,10 @@ const { Header, Content } = Layout;
 function NavMenu() {
   const location = useLocation();
   const menuItems = [
-    { key: '/', label: 'Chart', path: '/' },
-    { key: '/trades', label: 'Trade Entry', path: '/trades' },
-    { key: '/trade-summary', label: 'Trade Summary', path: '/trade-summary' },
-    { key: '/data-fetch', label: 'Fetch Data', path: '/data-fetch' },
+    { key: '/', label: <Link to="/">Chart</Link> },
+    { key: '/trades', label: <Link to="/trades">Trade Entry</Link> },
+    { key: '/trade-summary', label: <Link to="/trade-summary">Trade Summary</Link> },
+    { key: '/data-fetch', label: <Link to="/data-fetch">Fetch Data</Link> }
   ];
 
   return (
@@ -23,13 +23,8 @@ function NavMenu() {
       theme="dark"
       mode="horizontal"
       selectedKeys={[location.pathname]}
-    >
-      {menuItems.map(item => (
-        <Menu.Item key={item.key}>
-          <Link to={item.path}>{item.label}</Link>
-        </Menu.Item>
-      ))}
-    </Menu>
+      items={menuItems}  // Changed from children to items
+    />
   );
 }
 
