@@ -1,26 +1,40 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Select, DatePicker, Button, Space, message } from 'antd';
-import moment from 'moment-timezone';  // Use moment-timezone
+import moment from 'moment-timezone'; // Use moment-timezone
 import { createChart } from 'lightweight-charts';
 import { ENDPOINTS } from '../config/api';
 
 const StockChart = () => {
   const [symbol, setSymbol] = useState('SPY');
-  const [date, setDate] = useState(moment()); // Use regular moment
+  const [date, setDate] = useState(null); // Start with null
+  // Removed availableDates state
   const [currentBar, setCurrentBar] = useState(null);
+  const [interval, setInterval] = useState("2m"); 
   const chartContainerRef = useRef();
   const chartRef = useRef();
   const legendRef = useRef();
 
-  // Update aggregate2MinData function to handle NY timezone
-  const aggregate2MinData = (data) => {
+  const isMarketHours = (timestamp) => {
+    const date = new Date(timestamp);
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const time = hours * 60 + minutes;  // Convert to minutes since midnight
+    
+    return time >= 9 * 60 + 30 && time < 16 * 60;  // Between 9:30 and 16:00
+  };
+
+  const handleIntervalChange = (value) => {
+    setInterval(value);
+  };
+
+  const aggregateData = (data, minutesInterval) => {
     const groupedData = {};
     
     data.forEach(item => {
-      // Convert to NY timezone for proper grouping
-      const timestamp = moment.tz(item.tradetime, 'America/New_York');
+      // Parse using New York timezone
+      const timestamp = moment.tz(item.tradetime, "America/New_York");
       const minutes = timestamp.minutes();
-      timestamp.minutes(Math.floor(minutes / 2) * 2);
+      timestamp.minutes(Math.floor(minutes / minutesInterval) * minutesInterval);
       timestamp.seconds(0);
       const timeKey = timestamp.unix();
 
@@ -31,13 +45,13 @@ const StockChart = () => {
           high: parseFloat(item.high),
           low: parseFloat(item.low),
           close: parseFloat(item.close),
-          volume: parseInt(item.volume)
+          volume: parseFloat(item.volume)
         };
       } else {
         groupedData[timeKey].high = Math.max(groupedData[timeKey].high, parseFloat(item.high));
         groupedData[timeKey].low = Math.min(groupedData[timeKey].low, parseFloat(item.low));
         groupedData[timeKey].close = parseFloat(item.close);
-        groupedData[timeKey].volume += parseInt(item.volume);
+        groupedData[timeKey].volume += parseFloat(item.volume);
       }
     });
 
@@ -46,25 +60,31 @@ const StockChart = () => {
 
   const fetchStockData = async () => {
     try {
-      // Format date in local timezone, backend expects YYYY-MM-DD
-      const formattedDate = date.format('YYYY-MM-DD');
-      console.log('Fetching data for date:', formattedDate); // Debug log
-      
-      const response = await fetch(
-        `/api/stock-data?symbol=${symbol}&date=${formattedDate}`
-      );
-      const data = await response.json();
+      if (!date) {
+        message.warning('Please select a date');
+        return;
+      }
 
-      if (!data || data.error) {
-        throw new Error(data.error || 'Failed to fetch data');
+      const formattedDate = date.format('YYYY-MM-DD');
+      console.log('Fetching data for:', formattedDate);
+
+      const response = await fetch(`/api/stock-data?symbol=${symbol}&date=${formattedDate}`);
+      const data = await response.json();
+      console.log('Received data:', data); // Debug log
+
+      if (!data || data.error || !Array.isArray(data) || data.length === 0) {
+        message.warning('No data available for selected date');
+        return;
       }
 
       if (chartRef.current && data.length > 0) {
-        const { candlestickSeries, volumeSeries } = chartRef.current;
-        
-        // Aggregate and format the data
-        const aggregatedData = aggregate2MinData(data);
-        console.log('Aggregated data:', aggregatedData.length, 'bars'); // Debug log
+        const { candlestickSeries, volumeSeries, chart } = chartRef.current;
+        const minutesInterval = parseInt(interval.replace('m',''));
+        const aggregatedData = aggregateData(data, minutesInterval);
+
+        // Clear and set data
+        candlestickSeries.setData([]);
+        volumeSeries.setData([]);
         
         candlestickSeries.setData(aggregatedData);
         volumeSeries.setData(aggregatedData.map(item => ({
@@ -72,11 +92,27 @@ const StockChart = () => {
           value: item.volume,
           color: item.close >= item.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
         })));
+
+        // Set visible range using New York time
+        const startTime = moment.tz(`${formattedDate} 09:30`, 'YYYY-MM-DD HH:mm', 'America/New_York').unix();
+        const endTime = moment.tz(`${formattedDate} 16:00`, 'YYYY-MM-DD HH:mm', 'America/New_York').unix();
         
-        chartRef.current.chart.timeScale().fitContent();
+        chart.timeScale().applyOptions({
+          rightOffset: 12,
+          barSpacing: 12, // Increase spacing between bars
+        });
+
+        chart.timeScale().setVisibleRange({
+          from: startTime,
+          to: endTime,
+        });
+
+        // Fit content to view
+        setTimeout(() => {
+          chart.timeScale().fitContent();
+        }, 0);
+
         message.success(`Loaded ${data.length} data points`);
-      } else {
-        message.info('No data available for selected date');
       }
     } catch (error) {
       console.error('Error fetching stock data:', error);
@@ -84,18 +120,27 @@ const StockChart = () => {
     }
   };
 
-  // Add timezone conversion helper
-  const convertToNYTime = (timestamp) => {
-    return moment.tz(timestamp, "America/New_York");
+  // Update time formatter to use New York time
+  const formatTime = (timestamp) => {
+    return moment.tz(timestamp * 1000, "America/New_York").format("HH:mm");
   };
 
-  // Add legend component
+  // Replace the renderLegend implementation with the following:
   const renderLegend = (bar) => {
     if (!bar) return '';
-    const nyTime = convertToNYTime(bar.time * 1000);
+    const minutesInterval = parseInt(interval.replace('m',''));
+    // Convert bar.time (Unix seconds) to NY time and round to the nearest 2‐minute interval
+    const nyTime = moment.tz(bar.time * 1000, "America/New_York");
+    const minutes = nyTime.minutes();
+    const roundedMinutes = Math.floor(minutes / minutesInterval) * minutesInterval;
+    nyTime.minutes(roundedMinutes).seconds(0);
+    
+    const timeStr = nyTime.format("HH:mm");
+    const nextTime = moment(nyTime).add(minutesInterval, "minutes").format("HH:mm");
+    
     return `
       <div style="padding: 12px; background: white; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; line-height: 1.5;">
-        <div>Time (NY): ${nyTime.format('HH:mm')} - ${nyTime.add(2, 'minutes').format('HH:mm')}</div>
+        <div>Time: ${timeStr} - ${nextTime}</div>
         <div style="color: ${bar.close >= bar.open ? '#26a69a' : '#ef5350'}">
           Open: ${bar.open.toFixed(2)}
           High: ${bar.high.toFixed(2)}
@@ -105,6 +150,16 @@ const StockChart = () => {
         <div>Volume: ${bar.volume.toLocaleString()}</div>
       </div>
     `;
+  };
+
+  // Add date change handler
+  const handleDateChange = (newDate) => {
+    setDate(newDate);
+  };
+
+  const handleSymbolChange = (newSymbol) => {
+    setSymbol(newSymbol);
+    // Do not auto-update date on symbol change
   };
 
   useEffect(() => {
@@ -134,11 +189,17 @@ const StockChart = () => {
           timeVisible: true,
           secondsVisible: false,
           rightOffset: 12,
-          barSpacing: 6, // Increased spacing for better visibility
-          tickMarkFormatter: (time) => {
-            return moment.tz(time * 1000, 'America/New_York').format('HH:mm');
-          },
+          barSpacing: 12,  // Default bar spacing
+          minBarSpacing: 2,  // Minimum bar spacing
+          tickMarkFormatter: (time) => formatTime(time),
+          borderColor: '#D1D4DC',
+          fixLeftEdge: true,
+          fixRightEdge: true,
         },
+        localization: {
+          timeFormatter: (timestamp) =>
+            moment.tz(timestamp * 1000, "America/New_York").format("HH:mm")
+        }
       });
 
       const candlestickSeries = chart.addCandlestickSeries({
@@ -232,7 +293,7 @@ const StockChart = () => {
       <Space className="controls" style={{ marginBottom: '20px' }}>
         <Select
           value={symbol}
-          onChange={setSymbol}
+          onChange={handleSymbolChange}
           style={{ width: 120 }}
         >
           <Select.Option value="SPY">SPY</Select.Option>
@@ -241,13 +302,28 @@ const StockChart = () => {
         
         <DatePicker
           value={date}
-          onChange={newDate => setDate(newDate)}
+          onChange={handleDateChange}
+          // Disable dates in the future
           disabledDate={current => current && current > moment().endOf('day')}
+          allowClear={false}
+          style={{ width: 120 }}
         />
+
+        <Select
+          value={interval}
+          onChange={handleIntervalChange}
+          style={{ width: 120 }}
+        >
+          <Select.Option value="1m">1m</Select.Option>
+          <Select.Option value="2m">2m</Select.Option>
+          <Select.Option value="5m">5m</Select.Option>
+          <Select.Option value="10m">10m</Select.Option>
+        </Select>
 
         <Button 
           type="primary" 
           onClick={handleSearch}
+          disabled={!date}
         >
           Search
         </Button>

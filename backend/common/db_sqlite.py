@@ -118,6 +118,8 @@ def init_db():
             action_price REAL NOT NULL,
             size INTEGER NOT NULL,
             fee REAL NOT NULL DEFAULT 0,
+            stop_loss REAL,
+            exit_target REAL,
             reason TEXT NOT NULL,
             mental_state TEXT NOT NULL,
             description TEXT,
@@ -169,28 +171,25 @@ def insert_market_data(symbol: str, df: pd.DataFrame):
 
 
 def insert_trade(trade_data):
-    # Ensure the datetime is stored without timezone info
-    action_datetime = moment.tz(
-        trade_data["action_datetime"], "America/New_York"
-    ).format("YYYY-MM-DD HH:mm:00")
-    trade_data["action_datetime"] = action_datetime
-
     sql = """
         INSERT INTO trades (
             symbol, name, action, action_datetime, action_price, 
-            size, fee, reason, mental_state, description
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            size, fee, stop_loss, exit_target, reason, 
+            mental_state, description
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     args = (
         trade_data["symbol"],
         trade_data["name"],
         trade_data["action"],
-        trade_data["action_datetime"],
-        trade_data["action_price"],
+        trade_data["actionDateTime"],
+        trade_data["actionPrice"],
         trade_data["size"],
         trade_data.get("fee", 0),
+        trade_data.get("stopLoss", 0),
+        trade_data.get("exitTarget", 0),
         trade_data["reason"],
-        trade_data["mental_state"],
+        trade_data["mentalState"],
         trade_data.get("description", ""),
     )
     return execute_sql(sql, args)
@@ -200,35 +199,63 @@ def update_trade(trade_id, trade_data):
     sql = """
         UPDATE trades SET
             symbol = ?, name = ?, action = ?, action_datetime = ?, 
-            action_price = ?, size = ?, fee = ?,
-            reason = ?, mental_state = ?, description = ?,
-            updated_at = CURRENT_TIMESTAMP
+            action_price = ?, size = ?, fee = ?, stop_loss = ?,
+            exit_target = ?, reason = ?, mental_state = ?, 
+            description = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     """
     args = (
         trade_data["symbol"],
         trade_data["name"],
         trade_data["action"],
-        trade_data["action_datetime"],
-        trade_data["action_price"],
+        trade_data["actionDateTime"],
+        trade_data["actionPrice"],
         trade_data["size"],
         trade_data.get("fee", 0),
+        trade_data.get("stopLoss", 0),
+        trade_data.get("exitTarget", 0),
         trade_data["reason"],
-        trade_data["mental_state"],
+        trade_data["mentalState"],
         trade_data.get("description", ""),
         trade_id,
     )
     return execute_sql(sql, args)
 
 
-def get_trades(limit=10):
-    sql = """
-        SELECT * FROM trades 
-        ORDER BY action_datetime DESC 
-        LIMIT ?
-    """
-    df = pd.read_sql_query(sql, get_db(), params=(limit,))
-    return df.to_dict("records")
+def get_trades(symbol=None, trade_date=None):
+    try:
+        conn = get_db()
+
+        if not symbol and not trade_date:
+            # Return last day trades if no parameters
+            sql = """
+                SELECT * FROM trades 
+                WHERE date(action_datetime) = date('now', '-1 day')
+                ORDER BY action_datetime DESC
+            """
+            df = pd.read_sql_query(sql, conn)
+        elif symbol and not trade_date:
+            # Return last day trades for specific symbol
+            sql = """
+                SELECT * FROM trades 
+                WHERE symbol = ? 
+                AND date(action_datetime) = date('now', '-1 day')
+                ORDER BY action_datetime DESC
+            """
+            df = pd.read_sql_query(sql, conn, params=(symbol,))
+        else:
+            # Return trades for specific symbol and date
+            sql = """
+                SELECT * FROM trades 
+                WHERE symbol = ? 
+                AND date(action_datetime) = ?
+                ORDER BY action_datetime DESC
+            """
+            df = pd.read_sql_query(sql, conn, params=(symbol, trade_date))
+
+        return df.to_dict("records")
+    finally:
+        conn.close()
 
 
 def get_stock_data(symbol, date):

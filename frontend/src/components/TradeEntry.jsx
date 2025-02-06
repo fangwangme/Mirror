@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, DatePicker, Select, InputNumber, Space, Table, message } from 'antd';
-import moment from 'moment-timezone';  // Use moment-timezone
+import moment from 'moment';  // Just use regular moment
 import { ENDPOINTS } from '../config/api';
 
 const { TextArea } = Input;
@@ -10,14 +10,24 @@ const TradeEntry = () => {
   const [form] = Form.useForm();
   const [trades, setTrades] = useState([]);
   const [editingTrade, setEditingTrade] = useState(null);
+  // NEW: Filter states for trade list
+  const [filterSymbol, setFilterSymbol] = useState("");
+  const [filterDate, setFilterDate] = useState(null);
 
   useEffect(() => {
     fetchTrades();
   }, []);
 
+  // Modified fetchTrades to include filtering
   const fetchTrades = async () => {
     try {
-      const response = await fetch(ENDPOINTS.TRADES);
+      let url = ENDPOINTS.TRADES;
+      const params = new URLSearchParams();
+      if (filterSymbol) params.append("symbol", filterSymbol);
+      if (filterDate) params.append("date", filterDate.format("YYYY-MM-DD"));
+      if (params.toString()) url += "?" + params.toString();
+
+      const response = await fetch(url);
       const data = await response.json();
       setTrades(data);
     } catch (error) {
@@ -26,15 +36,20 @@ const TradeEntry = () => {
   };
 
   const onFinish = async (values) => {
-    const nyTime = values.actionDate.clone()
-      .tz('America/New_York')
-      .hour(values.actionTime.hour())
-      .minute(values.actionTime.minute());
+    // Simple date time combination
+    const actionDateTime = `${values.actionDate.format('YYYY-MM-DD')} ${values.actionTime.format('HH:mm:00')}`;
 
     const tradeData = {
-      ...values,
-      action_datetime: nyTime.format('YYYY-MM-DD HH:mm:ss'),
-      fee: values.fee || 0
+      symbol: values.symbol,
+      name: values.name.replace(/\s+/g, ''),
+      action: values.action,
+      actionDateTime,
+      actionPrice: values.actionPrice,
+      size: values.size,
+      fee: values.fee || 0,
+      reason: values.reason,
+      mentalState: values.mentalState,
+      description: values.description || ''
     };
 
     try {
@@ -42,24 +57,23 @@ const TradeEntry = () => {
         ? `${ENDPOINTS.TRADES}?id=${editingTrade.id}`
         : ENDPOINTS.TRADES;
       
-      const method = editingTrade ? 'PUT' : 'POST';
-      
       const response = await fetch(url, {
-        method,
+        method: editingTrade ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(tradeData)
       });
 
-      if (response.ok) {
-        message.success(`Trade ${editingTrade ? 'updated' : 'saved'} successfully`);
-        form.resetFields();
-        setEditingTrade(null);
-        fetchTrades();
-      } else {
-        throw new Error('Failed to save trade');
+      if (!response.ok) {
+        throw new Error(await response.text());
       }
+
+      message.success(`Trade ${editingTrade ? 'updated' : 'saved'} successfully`);
+      form.resetFields();
+      setEditingTrade(null);
+      fetchTrades();
     } catch (error) {
-      message.error(error.message);
+      console.error('Error saving trade:', error);
+      message.error(error.message || 'Failed to save trade');
     }
   };
 
@@ -80,16 +94,25 @@ const TradeEntry = () => {
       sorter: (a, b) => a.action.localeCompare(b.action),
     },
     { 
-      title: 'Action Time (NY)', 
+      title: 'Action Time', 
       dataIndex: 'action_datetime',
-      sorter: (a, b) => moment.tz(a.action_datetime, "America/New_York").unix() - 
-                        moment.tz(b.action_datetime, "America/New_York").unix(),
-      render: (text) => moment.tz(text, "America/New_York").format('YYYY-MM-DD HH:mm')
+      sorter: (a, b) => moment(a.action_datetime).unix() - moment(b.action_datetime).unix(),
+      render: (text) => moment(text).format('YYYY-MM-DD HH:mm')
     },
     { 
       title: 'Price', 
       dataIndex: 'action_price',
       sorter: (a, b) => a.action_price - b.action_price,
+    },
+    { 
+      title: 'Stop Loss', 
+      dataIndex: 'stop_loss',
+      sorter: (a, b) => (a.stop_loss || 0) - (b.stop_loss || 0),
+    },
+    { 
+      title: 'Exit Target', 
+      dataIndex: 'exit_target',
+      sorter: (a, b) => (a.exit_target || 0) - (b.exit_target || 0),
     },
     { 
       title: 'Size', 
@@ -108,11 +131,14 @@ const TradeEntry = () => {
       width: 100,
       render: (_, record) => (
         <Button onClick={() => {
+          const datetime = moment(record.action_datetime);
           setEditingTrade(record);
           form.setFieldsValue({
             ...record,
-            actionDate: moment(record.action_datetime),
-            actionTime: moment(record.action_datetime),
+            actionDate: datetime,
+            actionTime: datetime,
+            actionPrice: record.action_price,
+            mentalState: record.mental_state
           });
         }}>
           Edit
@@ -166,7 +192,10 @@ const TradeEntry = () => {
           label="Action Date"
           rules={[{ required: true }]}
         >
-          <DatePicker />
+          <DatePicker 
+            format="YYYY-MM-DD"
+            disabledDate={current => current && current > moment().endOf('day')}
+          />
         </Form.Item>
 
         <Form.Item
@@ -174,11 +203,17 @@ const TradeEntry = () => {
           label="Action Time"
           rules={[{ required: true }]}
         >
-          <DatePicker.TimePicker format="HH:mm" minuteStep={1} />
+          {/* Modified TimePicker to support seconds */}
+          <DatePicker.TimePicker 
+            format="HH:mm:ss"
+            minuteStep={1}
+            showSecond={true}
+            use12Hours={false}
+          />
         </Form.Item>
 
         <Form.Item
-          name="action_price"
+          name="actionPrice"  // Updated from action_price
           label="Action Price"
           rules={[{ required: true }]}
         >
@@ -187,6 +222,20 @@ const TradeEntry = () => {
             precision={2}
             style={{ width: 120 }}
           />
+        </Form.Item>
+
+        <Form.Item
+          name="stopLoss"
+          label="Stop Loss"
+        >
+          <InputNumber step={0.01} precision={2} style={{ width: 120 }} />
+        </Form.Item>
+
+        <Form.Item
+          name="exitTarget"
+          label="Exit Target"
+        >
+          <InputNumber step={0.01} precision={2} style={{ width: 120 }} />
         </Form.Item>
 
         <Form.Item
@@ -223,7 +272,7 @@ const TradeEntry = () => {
       </Form.Item>
 
       <Form.Item
-        name="mental_state"
+        name="mentalState"  // Updated from mental_state
         label="Mental State"
         rules={[{ required: true, message: 'Please describe your mental state' }]}
       >
@@ -260,14 +309,36 @@ const TradeEntry = () => {
         layout="vertical"
         onFinish={onFinish}
         initialValues={{
-          actionDate: moment(),
-          actionTime: moment(),
           size: 1,
-          fee: 0
+          fee: 0,
+          action: 'BTO'  // Set default action
         }}
       >
         {formItems}
       </Form>
+
+      {/* --- New Filter Panel for Trade List --- */}
+      <Space style={{ marginTop: '24px', marginBottom: '16px' }}>
+        <Select
+          placeholder="Filter Symbol"
+          value={filterSymbol}
+          onChange={setFilterSymbol}
+          style={{ width: 120 }}
+        >
+          <Option value="">All</Option>
+          <Option value="SPY">SPY</Option>
+          <Option value="QQQ">QQQ</Option>
+        </Select>
+        <DatePicker 
+          placeholder="Filter Date"
+          value={filterDate}
+          onChange={setFilterDate}
+          disabledDate={current => current && current > moment().endOf('day')}
+        />
+        <Button type="primary" onClick={fetchTrades}>
+          Apply Filter
+        </Button>
+      </Space>
 
       <div style={{ marginTop: '40px' }}>
         <h3>Recent Trades</h3>

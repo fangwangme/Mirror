@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Select, DatePicker, Card, Table, Space } from 'antd';
-import moment from 'moment-timezone';  // Use moment-timezone
+import { Select, DatePicker, Card, Table, Space, Button } from 'antd';
+import moment from 'moment';  // Remove timezone
 import { createChart } from 'lightweight-charts';
 import { ENDPOINTS } from '../config/api';
 
@@ -8,12 +8,32 @@ const { Option } = Select;
 
 const TradeSummary = () => {
   const [symbol, setSymbol] = useState('SPY');
-  const [date, setDate] = useState(moment());
+  const [date, setDate] = useState(null); // Changed from moment() to null
   const [trades, setTrades] = useState([]);
   const [marketData, setMarketData] = useState([]);
   const [profitSummary, setProfitSummary] = useState([]);
+  const [interval, setInterval] = useState("2m");
   const chartContainerRef = useRef();
   const chartRef = useRef();
+
+  const handleIntervalChange = (value) => {
+    setInterval(value);
+  };
+
+  // NEW: fetchMarketData only when Search is clicked
+  const fetchMarketData = async () => {
+    try {
+      if (!symbol || !date) return;
+      const formattedDate = date.format('YYYY-MM-DD');
+      const response = await fetch(`/api/stock-data?symbol=${symbol}&date=${formattedDate}`);
+      const data = await response.json();
+      if (data && Array.isArray(data) && data.length > 0) {
+        setMarketData(data);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   // Color scheme for different trade types
   const tradeColors = {
@@ -36,32 +56,33 @@ const TradeSummary = () => {
     return toNYTime(marketTime).format('YYYY-MM-DD HH:mm:00');
   };
 
-  // Aggregate 1m market data to 2m
-  const aggregate2MinData = (data) => {
-    const groupedData = {};
+  // Modified aggregateData to correctly handle New York timezone conversion
+  const aggregateData = (data, minutesInterval) => {
+    const grouped = {};
     data.forEach(item => {
-      const timestamp = new Date(item.tradetime);
-      timestamp.setMinutes(Math.floor(timestamp.getMinutes() / 2) * 2);
-      timestamp.setSeconds(0);
-      const timeKey = timestamp.getTime();
-
-      if (!groupedData[timeKey]) {
-        groupedData[timeKey] = {
-          time: timeKey / 1000,
-          open: item.open,
-          high: item.high,
-          low: item.low,
-          close: item.close,
-          volume: item.volume
+      // Assuming item.tradetime is a datetime string (e.g., "2023-10-03 09:31:00")
+      const timestamp = moment.tz(item.tradetime, "America/New_York");
+      const minutes = timestamp.minutes();
+      timestamp.minutes(Math.floor(minutes / minutesInterval) * minutesInterval)
+               .seconds(0);
+      const key = timestamp.unix();
+      if (!grouped[key]) {
+        grouped[key] = {
+          time: key,
+          open: parseFloat(item.open),
+          high: parseFloat(item.high),
+          low: parseFloat(item.low),
+          close: parseFloat(item.close),
+          volume: parseFloat(item.volume)
         };
       } else {
-        groupedData[timeKey].high = Math.max(groupedData[timeKey].high, item.high);
-        groupedData[timeKey].low = Math.min(groupedData[timeKey].low, item.low);
-        groupedData[timeKey].close = item.close;
-        groupedData[timeKey].volume += item.volume;
+        grouped[key].high = Math.max(grouped[key].high, parseFloat(item.high));
+        grouped[key].low = Math.min(grouped[key].low, parseFloat(item.low));
+        grouped[key].close = parseFloat(item.close);
+        grouped[key].volume += parseFloat(item.volume);
       }
     });
-    return Object.values(groupedData);
+    return Object.values(grouped).sort((a, b) => a.time - b.time);
   };
 
   // Calculate profit summary for each trade name
@@ -105,52 +126,6 @@ const TradeSummary = () => {
   };
 
   useEffect(() => {
-    if (chartContainerRef.current) {
-      const chart = createChart(chartContainerRef.current, {
-        height: 500,
-        layout: {
-          backgroundColor: '#ffffff',
-          textColor: '#333',
-        },
-        grid: {
-          vertLines: { color: '#f0f0f0' },
-          horzLines: { color: '#f0f0f0' },
-        },
-        crosshair: {
-          mode: 'normal',
-        },
-        timeScale: {
-          timeVisible: true,
-          secondsVisible: false,
-        },
-      });
-
-      const candlestickSeries = chart.addCandlestickSeries({
-        upColor: '#26a69a',
-        downColor: '#ef5350',
-        borderVisible: false,
-        wickUpColor: '#26a69a',
-        wickDownColor: '#ef5350',
-      });
-
-      // Create marker series for trades
-      const markerSeries = chart.addLineSeries({
-        lastValueVisible: false,
-      });
-
-      chartRef.current = {
-        chart,
-        candlestickSeries,
-        markerSeries
-      };
-
-      return () => {
-        chart.remove();
-      };
-    }
-  }, []);
-
-  useEffect(() => {
     const fetchData = async () => {
       try {
         const formattedDate = date.format('YYYY-MM-DD');
@@ -180,7 +155,8 @@ const TradeSummary = () => {
           const { candlestickSeries, markerSeries } = chartRef.current;
           
           // Aggregate data with normalized timestamps
-          const aggregatedData = aggregate2MinData(normalizedMarketData);
+          const minutesInterval = parseInt(interval.replace('m',''));
+          const aggregatedData = aggregateData(normalizedMarketData, minutesInterval);
 
           // Create markers with normalized timestamps
           const markers = filteredTrades.map(trade => {
@@ -209,7 +185,74 @@ const TradeSummary = () => {
     };
 
     fetchData();
-  }, [symbol, date]);
+  }, [symbol, date, interval]);
+
+  useEffect(() => {
+    if (chartContainerRef.current && marketData.length > 0) {
+      const minutesInterval = parseInt(interval.replace('m',''));
+      const aggregated = aggregateData(marketData, minutesInterval);
+      const chart = createChart(chartContainerRef.current, {
+        height: 500,  // Changed from 300 to 500
+        layout: {
+          backgroundColor: '#ffffff',
+          textColor: '#333'
+        },
+        grid: {
+          vertLines: { color: '#f0f0f0' },
+          horzLines: { color: '#f0f0f0' }
+        },
+        crosshair: { mode: 'normal' },
+        timeScale: {
+          timeVisible: true,
+          secondsVisible: false,
+          rightOffset: 12,
+          barSpacing: 12,
+          minBarSpacing: 2,
+          tickMarkFormatter: (time) =>
+            moment.tz(time * 1000, "America/New_York").format("HH:mm"),
+          borderColor: '#D1D4DC',
+          fixLeftEdge: true,
+          fixRightEdge: true,
+        }
+      });
+
+      const candlestickSeries = chart.addCandlestickSeries({
+        upColor: '#26a69a',
+        downColor: '#ef5350',
+        borderVisible: false,
+        wickUpColor: '#26a69a',
+        wickDownColor: '#ef5350'
+      });
+
+      const volumeSeries = chart.addHistogramSeries({
+        color: '#26a69a',
+        priceFormat: {
+          type: 'volume',
+        },
+        priceScaleId: 'volume',
+        scaleMargins: {
+          top: 0.8,
+          bottom: 0,
+        },
+      });
+
+      // Configure volume scale
+      chart.priceScale('volume').applyOptions({
+        scaleMargins: {
+          top: 0.8,
+          bottom: 0,
+        },
+      });
+
+      // Set data and fit content
+      candlestickSeries.setData(aggregated);
+      chart.timeScale().fitContent();
+
+      chartRef.current = chart;
+
+      return () => chart.remove();
+    }
+  }, [marketData, interval]);
 
   // Columns for profit summary table
   const columns = [
@@ -244,14 +287,23 @@ const TradeSummary = () => {
             value={date}
             onChange={setDate}
             disabledDate={current => current && current > moment().endOf('day')}
+            style={{ width: 120 }}
           />
+
+          <Select value={interval} onChange={handleIntervalChange} style={{ width: 120 }}>
+            <Option value="1m">1m</Option>
+            <Option value="2m">2m</Option>
+            <Option value="5m">5m</Option>
+            <Option value="10m">10m</Option>
+          </Select>
+          <Button type="primary" onClick={fetchMarketData}>Search</Button>
         </Space>
 
         <div 
           ref={chartContainerRef}
           style={{ 
             width: '100%',
-            height: '500px',
+            height: '500px',  // Changed from 300px to 500px
             border: '1px solid #ddd',
             borderRadius: '4px'
           }}

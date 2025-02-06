@@ -75,6 +75,28 @@ def fetch_market_data():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/available-dates", methods=["GET"])
+def get_available_dates():
+    try:
+        symbol = request.args.get("symbol")
+        if not symbol:
+            return jsonify({"error": "Symbol is required"}), 400
+
+        sql = """
+            SELECT DISTINCT tradeday 
+            FROM market_data 
+            WHERE symbol = ? 
+            ORDER BY tradeday DESC
+        """
+        df = pd.read_sql_query(sql, get_db(), params=(symbol,))
+        dates = df["tradeday"].tolist()
+
+        return jsonify(dates)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/stock-data", methods=["GET"])
 def get_stock_data():
     try:
@@ -105,7 +127,10 @@ def get_stock_data():
 def handle_trades():
     try:
         if request.method == "GET":
-            trades = get_trades()
+            # get symbol and date filters
+            symbol = request.args.get("symbol", None)
+            trade_date = request.args.get("date", None)
+            trades = get_trades(symbol, trade_date)
             return jsonify(trades)
 
         elif request.method == "POST":
