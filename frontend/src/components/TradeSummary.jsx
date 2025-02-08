@@ -364,6 +364,7 @@ const TradeSummary = () => {
             shape: trade.action === 'BUY' ? 'arrowUp' : 'arrowDown',
             text: `#${trade.tradeId}`,
             size: 3,
+            offsetY: trade.action === 'BUY' ? 20 : -20, // Added offsetY to move markers away from bars
             borderColor: color,
             backgroundColor: color,
             textColor: '#ffffff',
@@ -607,7 +608,7 @@ const TradeSummary = () => {
           <Select
             value={symbol}
             onChange={setSymbol}
-            style={{ width: 120 }}
+            style={{ width: 100 }}
           >
             <Option value="SPY">SPY</Option>
             <Option value="QQQ">QQQ</Option>
@@ -617,10 +618,10 @@ const TradeSummary = () => {
             value={date}
             onChange={setDate}
             disabledDate={current => current && current > moment().endOf('day')}
-            style={{ width: 120 }}
+            style={{ width: 150 }}  // Changed from 200 to 120
           />
 
-          <Select value={interval} onChange={handleIntervalChange} style={{ width: 120 }}>
+          <Select value={interval} onChange={handleIntervalChange} style={{ width: 100 }}>
             <Option value="1m">1m</Option>
             <Option value="2m">2m</Option>
             <Option value="5m">5m</Option>
