@@ -272,7 +272,7 @@ const TradeEntry = () => {
       <Form.Item
         name="reason"
         label="Reason for Entry"
-        rules={[{ required: true, message: 'Please provide entry reason' }]}
+        // Removed required rule
       >
         <TextArea
           rows={3}
@@ -282,9 +282,9 @@ const TradeEntry = () => {
       </Form.Item>
 
       <Form.Item
-        name="mentalState"  // Updated from mental_state
+        name="mentalState"
         label="Mental State"
-        rules={[{ required: true, message: 'Please describe your mental state' }]}
+        // Removed required rule
       >
         <TextArea
           rows={2}
@@ -337,8 +337,8 @@ const TradeEntry = () => {
         exitTarget: values.exitTarget || 0,
         size: values.size,
         fee: values.fee || 0,
-        reason: values.reason,
-        mentalState: values.mentalState,
+        reason: values.reason || '',        // Added default empty string
+        mentalState: values.mentalState || '', // Added default empty string
         description: values.description || ''
       };
   
