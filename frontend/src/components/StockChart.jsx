@@ -306,7 +306,7 @@ const StockChart = () => {
           // Disable dates in the future
           disabledDate={current => current && current > moment().endOf('day')}
           allowClear={false}
-          style={{ width: 120 }}
+          style={{ width: 150 }}  // Changed from 120 to 150
         />
 
         <Select
