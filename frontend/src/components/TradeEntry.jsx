@@ -1,25 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, DatePicker, Select, InputNumber, Space, Table, message, TimePicker } from 'antd';
-import moment from 'moment';  // Just use regular moment
+import moment from 'moment-timezone';
 import { ENDPOINTS } from '../config/api';
 
 const { TextArea } = Input;
 const { Option } = Select;
 
 const TradeEntry = () => {
+  // Initialize form with proper array destructuring
   const [form] = Form.useForm();
+  
+  // State declarations
   const [trades, setTrades] = useState([]);
   const [editingTrade, setEditingTrade] = useState(null);
-  // NEW: Filter states for trade list
-  const [filterSymbol, setFilterSymbol] = useState("");
-  const [filterDate, setFilterDate] = useState(null);
-
-  // Change default symbol to SPY
+  const [filterSymbol, setFilterSymbol] = useState("SPY");  // Default to SPY
+  const [filterDate, setFilterDate] = useState(moment().subtract(1, 'days'));  // Default to yesterday
   const [symbol, setSymbol] = useState('SPY');
+  const [selectedTimezone, setSelectedTimezone] = useState("America/New_York");
 
+  // Timezone options configuration
+  const timezoneOptions = [
+    { value: 'America/New_York', label: 'New York' },
+    { value: 'Asia/Shanghai', label: 'Beijing' },
+    { value: 'Asia/Singapore', label: 'Singapore' }
+  ];
+
+  // Initial data fetch on component mount
   useEffect(() => {
     fetchTrades();
   }, []);
+
+  // Load default form values
+  useEffect(() => {
+    form.setFieldsValue(initialFormValues);
+  }, [form]);
+
+  // Clean up form on unmount
+  useEffect(() => {
+    return () => {
+      form.resetFields();
+    };
+  }, [form]);
 
   // Modified fetchTrades to include filtering
   const fetchTrades = async () => {
@@ -81,27 +102,58 @@ const TradeEntry = () => {
     }
   };
 
+  // Update edit button handler to avoid circular references
+  const handleEditClick = (record) => {
+    const datetime = moment.tz(record.action_datetime, "YYYY-MM-DD HH:mm:ss", "America/New_York");
+    setSelectedTimezone("America/New_York");
+    
+    const timeValue = moment().set({
+      hour: datetime.hour(),
+      minute: datetime.minute(),
+      second: datetime.second()
+    });
+    
+    setEditingTrade(record);
+    
+    const formValues = {
+      ...record,
+      actionDate: datetime,
+      actionTime: timeValue,
+      actionPrice: record.action_price,
+      stopLoss: record.stop_loss || 0,
+      exitTarget: record.exit_target || 0,
+      mentalState: record.mental_state
+    };
+
+    form.setFieldsValue(formValues);
+  };
+
+  // Update columns configuration with optimized widths
   const columns = [
     { 
       title: 'Symbol', 
       dataIndex: 'symbol',
       sorter: (a, b) => a.symbol.localeCompare(b.symbol),
+      width: 80,  // Reduced width
     },
     { 
       title: 'Name', 
       dataIndex: 'name',
       sorter: (a, b) => a.name.localeCompare(b.name),
+      width: 200,  // Increased width
     },
     { 
       title: 'Action', 
       dataIndex: 'action',
       sorter: (a, b) => a.action.localeCompare(b.action),
+      width: 80,  // Reduced width
     },
     { 
       title: 'Action Time', 
       dataIndex: 'action_datetime',
       sorter: (a, b) => moment(a.action_datetime).unix() - moment(b.action_datetime).unix(),
-      render: (text) => moment(text).format('YYYY-MM-DD HH:mm')
+      render: (text) => moment(text).format('YYYY-MM-DD HH:mm:ss'),
+      width: 180,  // Increased width
     },
     { 
       title: 'Price', 
@@ -136,23 +188,7 @@ const TradeEntry = () => {
       fixed: 'right',
       width: 100,
       render: (_, record) => (
-        <Button onClick={() => {
-          const datetime = moment(record.action_datetime);
-          setEditingTrade(record);
-          form.setFieldsValue({
-            ...record,
-            actionDate: datetime,
-            actionTime: datetime.set({  // Preserve seconds when editing
-              hour: datetime.hour(),
-              minute: datetime.minute(),
-              second: datetime.second()
-            }),
-            actionPrice: record.action_price,
-            stopLoss: record.stop_loss || 0,    // Ensure stop_loss is 0 if not provided
-            exitTarget: record.exit_target || 0, // Ensure exit_target is 0 if not provided
-            mentalState: record.mental_state
-          });
-        }}>
+        <Button onClick={() => handleEditClick(record)}>
           Edit
         </Button>
       ),
@@ -179,7 +215,7 @@ const TradeEntry = () => {
           label="Name"
           rules={[{ required: true, message: 'Please enter trade name' }]}
         >
-          <Input placeholder="e.g., SPY 400 Call 7/21" style={{ width: 200 }} />
+          <Input placeholder="e.g., SPY 250201 Put 600" style={{ width: 200 }} />
         </Form.Item>
       </Space>
 
@@ -211,15 +247,19 @@ const TradeEntry = () => {
           label="Action Time"
           rules={[{ required: true }]}
         >
-          <TimePicker 
-            format="HH:mm:ss"
-            showSecond={true}
-            hideDisabledOptions={true}
-            minuteStep={1}
-            secondStep={1}
-            use12Hours={false}
-            style={{ width: 120 }}
-          />
+          <Space>
+            <TimePicker 
+              format="HH:mm:ss"
+              value={form.getFieldValue('actionTime')}
+              style={{ width: 200 }}
+            />
+            <Select
+              value={selectedTimezone}
+              onChange={setSelectedTimezone}
+              style={{ width: 120 }}
+              options={timezoneOptions}
+            />
+          </Space>
         </Form.Item>
 
         <Form.Item
@@ -324,14 +364,23 @@ const TradeEntry = () => {
 
   const handleTradeSubmit = async (values) => {
     try {
-      // Combine date and time into a single datetime string
-      const actionDateTime = `${values.actionDate.format('YYYY-MM-DD')} ${values.actionTime.format('HH:mm:ss')}`;
+      // Ensure actionTime is a moment instance
+      const actionTime = moment.isMoment(values.actionTime)
+        ? values.actionTime
+        : moment(values.actionTime, 'HH:mm:ss');
+        
+      // Combine date and time using the selected timezone then convert to New York time.
+      const localDateTime = moment.tz(
+        `${values.actionDate.format('YYYY-MM-DD')} ${actionTime.format('HH:mm:ss')}`,
+        selectedTimezone
+      );
+      const nyDateTime = localDateTime.clone().tz("America/New_York");
   
       const tradeData = {
         symbol: values.symbol,
         name: values.name.replace(/\s+/g, ''),
         action: values.action,
-        actionDateTime: actionDateTime,
+        actionDateTime: nyDateTime.format('YYYY-MM-DD HH:mm:ss'),
         actionPrice: values.actionPrice,
         stopLoss: values.stopLoss || 0,
         exitTarget: values.exitTarget || 0,
@@ -366,53 +415,53 @@ const TradeEntry = () => {
     }
   };
 
-  // Update initial form values to include defaults
+  // Default form values
   const initialFormValues = {
     symbol: 'SPY',
     stopLoss: 0,
     exitTarget: 0
   };
 
-  useEffect(() => {
-    form.setFieldsValue(initialFormValues);
-  }, [form]);
-
   return (
     <div className="trade-entry">
       <h2>{editingTrade ? 'Edit Trade' : 'Enter Trade Details'}</h2>
+      
+      {/* Trade Entry Form */}
       <Form
         form={form}
         layout="vertical"
         onFinish={handleTradeSubmit}
-        initialValues={{ ...initialFormValues, symbol: 'SPY' }} // Explicitly set SPY as default
+        initialValues={initialFormValues}
       >
         {formItems}
       </Form>
 
-      {/* --- New Filter Panel for Trade List --- */}
+      {/* Filter Panel */}
       <Space style={{ marginTop: '24px', marginBottom: '16px' }}>
         <Select
           placeholder="Filter Symbol"
           value={filterSymbol}
           onChange={setFilterSymbol}
           style={{ width: 120 }}
-          defaultValue="SPY" // Set default for filter as well
         >
-          <Option value="">All</Option>
           <Option value="SPY">SPY</Option>
           <Option value="QQQ">QQQ</Option>
+          <Option value="">All</Option>
         </Select>
+        
         <DatePicker 
           placeholder="Filter Date"
           value={filterDate}
           onChange={setFilterDate}
           disabledDate={current => current && current > moment().endOf('day')}
         />
+        
         <Button type="primary" onClick={fetchTrades}>
           Apply Filter
         </Button>
       </Space>
 
+      {/* Trades Table */}
       <div style={{ marginTop: '40px' }}>
         <h3>Recent Trades</h3>
         <Table

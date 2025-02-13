@@ -336,6 +336,9 @@ const TradeSummary = () => {
         const markers = [];
         const minutesInterval = parseInt(interval.replace('m', ''));
 
+        // Group trades by price to handle overlapping
+        const tradesByPrice = {};
+        
         tradeData.forEach(trade => {
           const tradeTime = moment.tz(trade.action_datetime, "America/New_York");
           const minutes = tradeTime.minutes();
@@ -346,32 +349,47 @@ const TradeSummary = () => {
           const tradeType = getTradeType(trade);
           const color = tradeTypeColors[tradeType];
 
-          // Create price line with correct color
+          // Create price line
           candlestickSeries.createPriceLine({
             price: trade.action_price,
             color: color,
             lineWidth: 1,
             lineStyle: 2,
             axisLabelVisible: true,
-            title: `#${trade.tradeId} ${trade.name} ${trade.action}`,
+            title: `#${trade.tradeId}`,
             time: timestamp,
           });
 
+          // Add marker without text for trades at same price
           markers.push({
             time: timestamp,
             position: trade.action === 'BUY' ? 'belowBar' : 'aboveBar',
             color: color,
             shape: trade.action === 'BUY' ? 'arrowUp' : 'arrowDown',
-            text: `#${trade.tradeId}`,
             size: 3,
-            offsetY: trade.action === 'BUY' ? 20 : -20, // Added offsetY to move markers away from bars
-            borderColor: color,
-            backgroundColor: color,
-            textColor: '#ffffff',
+            text: `#${trade.tradeId}`, // Only show trade ID
           });
         });
 
         candlestickSeries.setMarkers(markers);
+
+        // Add padding to the visible range
+        chart.timeScale().applyOptions({
+          rightOffset: 20,  // Increase right padding
+          leftOffset: 20,   // Add left padding
+          barSpacing: 12,
+        });
+
+        // Set visible range with padding
+        const times = marketData.map(d => moment.tz(d.tradetime, "America/New_York").unix());
+        const minTime = Math.min(...times);
+        const maxTime = Math.max(...times);
+        const padding = 300; // 5 minutes in seconds
+
+        chart.timeScale().setVisibleRange({
+          from: minTime - padding,
+          to: maxTime + padding,
+        });
       }
 
       // Set up tooltip handling

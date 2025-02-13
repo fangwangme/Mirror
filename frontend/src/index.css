@@ -25,3 +25,35 @@ code {
   gap: 16px;
   align-items: center;
 }
+
+/* Fix TimePicker dropdown styling */
+.time-picker-popup {
+  min-width: 180px !important;
+}
+
+.time-picker-popup .ant-picker-time-panel-column {
+  min-width: 60px !important;
+}
+
+.time-picker-popup .ant-picker-footer {
+  padding: 4px 8px !important;
+  text-align: right !important;
+  display: flex !important;
+  justify-content: space-between !important;
+}
+
+.time-picker-popup .ant-picker-time-panel-column {
+  min-width: 60px !important;
+}
+
+.ant-picker-dropdown {
+  min-width: 180px !important;
+}
+
+.ant-picker-time-panel-column {
+  min-width: 58px !important;
+}
+
+.ant-picker-time-panel {
+  width: auto !important;
+}
