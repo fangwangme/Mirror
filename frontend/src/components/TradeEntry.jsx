@@ -25,6 +25,19 @@ const TradeEntry = () => {
     { value: 'Asia/Singapore', label: 'Singapore' }
   ];
 
+  // Add timezone change handler
+  const handleTimezoneChange = (newTimezone) => {
+    setSelectedTimezone(newTimezone);
+    
+    // Get current time value
+    const currentTime = form.getFieldValue('actionTime');
+    if (currentTime && moment.isMoment(currentTime)) {
+      // Convert time to new timezone while preserving local time
+      const newTime = moment(currentTime).tz(newTimezone, true);
+      form.setFieldsValue({ actionTime: newTime });
+    }
+  };
+
   // Initial data fetch on component mount
   useEffect(() => {
     fetchTrades();
@@ -105,26 +118,22 @@ const TradeEntry = () => {
   // Update edit button handler to avoid circular references
   const handleEditClick = (record) => {
     const datetime = moment.tz(record.action_datetime, "YYYY-MM-DD HH:mm:ss", "America/New_York");
+    
     setSelectedTimezone("America/New_York");
-    
-    const timeValue = moment().set({
-      hour: datetime.hour(),
-      minute: datetime.minute(),
-      second: datetime.second()
-    });
-    
     setEditingTrade(record);
-    
+
+    // Set the time without timezone conversion
     const formValues = {
       ...record,
       actionDate: datetime,
-      actionTime: timeValue,
+      actionTime: moment(datetime),  // Create new moment without timezone
       actionPrice: record.action_price,
       stopLoss: record.stop_loss || 0,
       exitTarget: record.exit_target || 0,
       mentalState: record.mental_state
     };
 
+    console.log('Setting form time:', formValues.actionTime.format('HH:mm:ss'));
     form.setFieldsValue(formValues);
   };
 
@@ -250,8 +259,14 @@ const TradeEntry = () => {
           <Space>
             <TimePicker 
               format="HH:mm:ss"
-              value={form.getFieldValue('actionTime')}
               style={{ width: 200 }}
+              onChange={(time) => {
+                if (time) {
+                  // Keep the original time value without timezone conversion
+                  console.log('Setting time:', time.format('HH:mm:ss'));
+                  form.setFieldsValue({ actionTime: time });
+                }
+              }}
             />
             <Select
               value={selectedTimezone}
@@ -364,33 +379,38 @@ const TradeEntry = () => {
 
   const handleTradeSubmit = async (values) => {
     try {
-      // Ensure actionTime is a moment instance
-      const actionTime = moment.isMoment(values.actionTime)
-        ? values.actionTime
-        : moment(values.actionTime, 'HH:mm:ss');
-        
-      // Combine date and time using the selected timezone then convert to New York time.
+      const actionDate = values.actionDate;
+      const actionTime = values.actionTime;
+      
+      if (!actionDate || !actionTime) {
+        message.error('Date and time are required');
+        return;
+      }
+
+      // Create datetime in selected timezone
       const localDateTime = moment.tz(
-        `${values.actionDate.format('YYYY-MM-DD')} ${actionTime.format('HH:mm:ss')}`,
+        `${actionDate.format('YYYY-MM-DD')} ${actionTime.format('HH:mm:ss')}`,
         selectedTimezone
       );
+
+      console.log('Local datetime:', localDateTime.format('YYYY-MM-DD HH:mm:ss'));
+      
+      // Convert to NY time
       const nyDateTime = localDateTime.clone().tz("America/New_York");
-  
+      console.log('NY datetime:', nyDateTime.format('YYYY-MM-DD HH:mm:ss'));
+
       const tradeData = {
-        symbol: values.symbol,
-        name: values.name.replace(/\s+/g, ''),
-        action: values.action,
+        ...values,
         actionDateTime: nyDateTime.format('YYYY-MM-DD HH:mm:ss'),
-        actionPrice: values.actionPrice,
+        name: values.name.replace(/\s+/g, ''),
         stopLoss: values.stopLoss || 0,
         exitTarget: values.exitTarget || 0,
-        size: values.size,
         fee: values.fee || 0,
         reason: values.reason || '',        // Added default empty string
         mentalState: values.mentalState || '', // Added default empty string
         description: values.description || ''
       };
-  
+
       const url = editingTrade 
         ? `${ENDPOINTS.TRADES}?id=${editingTrade.id}`  // Changed from /${editingTrade.id} to ?id=
         : ENDPOINTS.TRADES;
