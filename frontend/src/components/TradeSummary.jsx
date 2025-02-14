@@ -230,7 +230,7 @@ const TradeSummary = () => {
         tooltipContent += `
           <div style="color: ${color}; padding: 2px 0;">
             <span style="display: inline-block; width: 8px; height: 8px; background: ${color}; border-radius: 50%; margin-right: 4px;"></span>
-            #${trade.tradeId} ${trade.action} ${trade.name} 
+            #${trade.tradeId} ${trade.action} ${trade.size} ${trade.name} 
             @ $${trade.action_price.toFixed(2)} (${tradeTime})
           </div>`;
       });
