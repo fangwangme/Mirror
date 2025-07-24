@@ -234,7 +234,7 @@ def get_trades(symbol=None, trade_date=None):
                 ORDER BY action_datetime DESC
             """
             df = pd.read_sql_query(sql, conn)
-        elif symbol and not trade_date:
+        elif symbol and symbol.lower() != "all" and not trade_date:
             # Return last day trades for specific symbol
             sql = """
                 SELECT * FROM trades 
@@ -243,6 +243,14 @@ def get_trades(symbol=None, trade_date=None):
                 ORDER BY action_datetime DESC
             """
             df = pd.read_sql_query(sql, conn, params=(symbol,))
+        elif not symbol and trade_date:
+            # Return trades for specific date
+            sql = """
+                SELECT * FROM trades 
+                WHERE date(action_datetime) = ?
+                ORDER BY action_datetime DESC
+            """
+            df = pd.read_sql_query(sql, conn, params=(trade_date,))
         else:
             # Return trades for specific symbol and date
             sql = """
